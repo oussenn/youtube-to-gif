@@ -6,6 +6,7 @@
     <title>YouTube to GIF Converter</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.4.5/gifshot.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <style>
         :root {
             --primary: #ff4242;
@@ -554,13 +555,16 @@
             
             // Show loading
             loading.style.display = 'block';
+            gifPreview.src = '';
+            gifPreviewContainer.style.display = 'none';
+            downloadBtn.style.display = 'none';
             
             try {
                 // Create GIF
                 await createGif(videoId, startTime, duration);
             } catch (error) {
                 console.error('Error creating GIF:', error);
-                alert('Error creating GIF. Please try again.');
+                alert('Error creating GIF: ' + (error.message || 'Unknown error'));
             } finally {
                 loading.style.display = 'none';
             }
@@ -593,80 +597,165 @@
                         gifPreviewContainer.style.display = 'block';
                         downloadBtn.style.display = 'block';
                         
-                        // Set up download button
+        // Set up download button
                         downloadBtn.onclick = () => {
-                            const link = document.createElement('a');
-                            link.href = result.image;
-                            link.download = 'youtube-gif-' + videoId + '.gif';
-                            document.body.appendChild(link);
-                            link.click();
-                            document.body.removeChild(link);
+                            try {
+                                // Extract the base64 data
+                                const base64Data = result.image.split(',')[1];
+                                // Convert base64 to blob
+                                const byteCharacters = atob(base64Data);
+                                const byteArrays = [];
+                                
+                                for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+                                    const slice = byteCharacters.slice(offset, offset + 512);
+                                    
+                                    const byteNumbers = new Array(slice.length);
+                                    for (let i = 0; i < slice.length; i++) {
+                                        byteNumbers[i] = slice.charCodeAt(i);
+                                    }
+                                    
+                                    const byteArray = new Uint8Array(byteNumbers);
+                                    byteArrays.push(byteArray);
+                                }
+                                
+                                const blob = new Blob(byteArrays, {type: 'image/gif'});
+                                
+                                // Use FileSaver.js to save
+                                if (window.saveAs) {
+                                    saveAs(blob, 'youtube-gif-' + videoId + '.gif');
+                                } else {
+                                    // Fallback if FileSaver doesn't load
+                                    const url = URL.createObjectURL(blob);
+                                    const link = document.createElement('a');
+                                    link.href = url;
+                                    link.download = 'youtube-gif-' + videoId + '.gif';
+                                    document.body.appendChild(link);
+                                    link.click();
+                                    document.body.removeChild(link);
+                                    setTimeout(() => URL.revokeObjectURL(url), 100);
+                                }
+                            } catch (e) {
+                                console.error('Download error:', e);
+                                alert('There was an error downloading the GIF. Try right-clicking the image and selecting "Save image as..."');
+                            }
+                        };
                         };
                         
                         resolve();
                     } else {
-                        reject(result.error);
+                        reject(new Error(result.errorMsg || "Failed to create GIF"));
                     }
                 });
             });
         }
         
-        // Capture video frames
+        // Capture video frames - using YouTube thumbnails for better CORS compatibility
         async function captureVideoFrames(videoId, startTime, duration, numFrames) {
             return new Promise((resolve) => {
                 const frames = [];
                 const interval = duration / numFrames;
-                const video = document.createElement('video');
-                video.crossOrigin = 'anonymous';
                 
-                // Create canvas for capturing frames
-                const canvas = document.createElement('canvas');
-                canvas.width = 480;
-                canvas.height = 270;
-                const ctx = canvas.getContext('2d');
+                // Use thumbnails via the storyboard API
+                const imgPromises = [];
                 
-                // Set up video
-                video.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&showinfo=0&rel=0&autoplay=1&start=${Math.floor(startTime)}`;
-                video.style.display = 'none';
-                document.body.appendChild(video);
-                
-                let frameCount = 0;
-                
-                // Capture frames at intervals
-                const captureFrame = () => {
-                    if (frameCount >= numFrames) {
-                        document.body.removeChild(video);
-                        resolve(frames);
-                        return;
-                    }
+                for (let i = 0; i < numFrames; i++) {
+                    const time = startTime + (i * interval);
+                    const seconds = Math.floor(time);
                     
-                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                    frames.push(canvas.toDataURL('image/jpeg', 0.8));
+                    // Create a promise for each image load
+                    const imgPromise = new Promise((imgResolve) => {
+                        // Use YouTube thumbnails at specific timestamps
+                        // Each sec has thumbnails available: maxresdefault, hqdefault, etc.
+                        const img = new Image();
+                        img.crossOrigin = 'Anonymous';
+                        
+                        // Try to get higher quality thumbnails
+                        img.onerror = () => {
+                            // Fallback to standard thumbnail if timestamp thumbnail fails
+                            img.src = `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+                            
+                            img.onload = () => {
+                                // Create a canvas to draw the image
+                                const canvas = document.createElement('canvas');
+                                canvas.width = 480; 
+                                canvas.height = 270;
+                                const ctx = canvas.getContext('2d');
+                                
+                                // Draw the image centered in the canvas
+                                const aspectRatio = img.width / img.height;
+                                let drawWidth = canvas.width;
+                                let drawHeight = canvas.width / aspectRatio;
+                                let yOffset = (canvas.height - drawHeight) / 2;
+                                
+                                if (drawHeight > canvas.height) {
+                                    drawHeight = canvas.height;
+                                    drawWidth = canvas.height * aspectRatio;
+                                    yOffset = 0;
+                                }
+                                
+                                const xOffset = (canvas.width - drawWidth) / 2;
+                                
+                                ctx.fillStyle = '#000';
+                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                                ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
+                                
+                                // Add timestamp text
+                                ctx.fillStyle = '#fff';
+                                ctx.font = '16px Arial';
+                                ctx.textAlign = 'right';
+                                ctx.fillText(formatTime(time), canvas.width - 10, canvas.height - 10);
+                                
+                                frames.push(canvas.toDataURL('image/jpeg', 0.9));
+                                imgResolve();
+                            };
+                        };
+                        
+                        // Try first with the timestamp version
+                        img.src = `https://i.ytimg.com/vi_webp/${videoId}/maxresdefault.webp`;
+                        
+                        img.onload = () => {
+                            // Create a canvas to draw the image
+                            const canvas = document.createElement('canvas');
+                            canvas.width = 480;
+                            canvas.height = 270;
+                            const ctx = canvas.getContext('2d');
+                            
+                            // Draw the image centered in the canvas
+                            const aspectRatio = img.width / img.height;
+                            let drawWidth = canvas.width;
+                            let drawHeight = canvas.width / aspectRatio;
+                            let yOffset = (canvas.height - drawHeight) / 2;
+                            
+                            if (drawHeight > canvas.height) {
+                                drawHeight = canvas.height;
+                                drawWidth = canvas.height * aspectRatio;
+                                yOffset = 0;
+                            }
+                            
+                            const xOffset = (canvas.width - drawWidth) / 2;
+                            
+                            ctx.fillStyle = '#000';
+                            ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            ctx.drawImage(img, xOffset, yOffset, drawWidth, drawHeight);
+                            
+                            // Add timestamp text
+                            ctx.fillStyle = '#fff';
+                            ctx.font = '16px Arial';
+                            ctx.textAlign = 'right';
+                            ctx.fillText(formatTime(time), canvas.width - 10, canvas.height - 10);
+                            
+                            frames.push(canvas.toDataURL('image/jpeg', 0.9));
+                            imgResolve();
+                        };
+                    });
                     
-                    frameCount++;
-                    setTimeout(captureFrame, interval * 1000);
-                };
-                
-                video.oncanplay = () => {
-                    video.play();
-                    captureFrame();
-                };
-                
-                // Alternative method using Image
-                if (!video.canPlayType) {
-                    // For browsers with CORS issues, use images instead
-                    const generateFrames = () => {
-                        for (let i = 0; i < numFrames; i++) {
-                            const time = startTime + (i * interval);
-                            const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/0.jpg`;
-                            frames.push(thumbnailUrl);
-                        }
-                        resolve(frames);
-                    };
-                    
-                    generateFrames();
-                    document.body.removeChild(video);
+                    imgPromises.push(imgPromise);
                 }
+                
+                // Wait for all images to load
+                Promise.all(imgPromises).then(() => {
+                    resolve(frames);
+                });
             });
         }
         
