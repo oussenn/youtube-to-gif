@@ -398,6 +398,16 @@
         // YouTube player initialization
         function onYouTubeIframeAPIReady() {
             // YouTube API is ready
+            console.log("YouTube API Ready");
+            
+            // Check if URL already has a YouTube video ID
+            const urlParams = new URLSearchParams(window.location.search);
+            const videoIdParam = urlParams.get('v');
+            
+            if (videoIdParam) {
+                youtubeUrlInput.value = `https://www.youtube.com/watch?v=${videoIdParam}`;
+                loadVideoBtn.click();
+            }
         }
         
         function loadYouTubeVideo(id) {
@@ -435,20 +445,66 @@
             // Draw initial timeline
             drawTimeline();
             
-            // Set up timeline click interaction
-            timelineCanvas.addEventListener('click', (e) => {
-                const rect = timelineCanvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const clickTime = (x / timelineCanvas.width) * videoDuration;
-                player.seekTo(clickTime, true);
-            });
+            // Timeline click handler
+        timelineCanvas.addEventListener('click', (e) => {
+            const rect = timelineCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const clickTime = (x / timelineCanvas.width) * videoDuration;
+            
+            // Set the start time slider to where the user clicked
+            startTimeSlider.value = clickTime;
+            updateStartTimeValue();
+            
+            // Seek to that position in the video
+            player.seekTo(clickTime, true);
+        });
             
             // Start updating current time
             setInterval(updateCurrentTime, 100);
         }
         
         function onPlayerStateChange(event) {
-            // Update current time when video is playing
+            // Update slider when video is playing
+            if (event.data === YT.PlayerState.PLAYING) {
+                // Start the timer to update the slider position
+                startTimeUpdateInterval();
+            } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                // Stop updating when paused or ended
+                stopTimeUpdateInterval();
+                
+                // Update the start time slider to current position when paused
+                if (event.data === YT.PlayerState.PAUSED) {
+                    const currentTime = player.getCurrentTime();
+                    startTimeSlider.value = currentTime;
+                    updateStartTimeValue();
+                }
+            }
+        }
+        
+        let timeUpdateInterval;
+        
+        function startTimeUpdateInterval() {
+            // Clear any existing interval
+            stopTimeUpdateInterval();
+            
+            // Update every 100ms while playing
+            timeUpdateInterval = setInterval(() => {
+                const currentTime = player.getCurrentTime();
+                currentTime.textContent = formatTime(currentTime);
+                
+                // Don't update the slider while user is dragging it
+                if (!startTimeSlider.classList.contains('dragging')) {
+                    startTimeSlider.value = currentTime;
+                    updateStartTimeValue();
+                }
+            }, 100);
+        }
+        
+        function stopTimeUpdateInterval() {
+            if (timeUpdateInterval) {
+                clearInterval(timeUpdateInterval);
+                timeUpdateInterval = null;
+            }
         }
         
         function updateCurrentTime() {
@@ -530,9 +586,41 @@
             loadYouTubeVideo(videoId);
         });
         
-        // Update sliders
+        // Initialize sliders and mouse events
         startTimeSlider.addEventListener('input', updateStartTimeValue);
         durationSlider.addEventListener('input', updateDurationValue);
+        
+        // Add dragging class for state tracking
+        startTimeSlider.addEventListener('mousedown', () => {
+            startTimeSlider.classList.add('dragging');
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (startTimeSlider.classList.contains('dragging')) {
+                startTimeSlider.classList.remove('dragging');
+                // Seek to the selected time when released
+                if (player && player.seekTo) {
+                    player.seekTo(parseFloat(startTimeSlider.value), true);
+                }
+            }
+        });
+        
+        // Add button to set start time to current video position
+        const setCurrentTimeBtn = document.createElement('button');
+        setCurrentTimeBtn.textContent = 'Set Current Time';
+        setCurrentTimeBtn.className = 'set-current-time';
+        setCurrentTimeBtn.style.marginLeft = '10px';
+        startTimeValue.parentNode.appendChild(setCurrentTimeBtn);
+        
+        setCurrentTimeBtn.addEventListener('click', () => {
+            if (player && player.getCurrentTime) {
+                const currentTime = player.getCurrentTime();
+                startTimeSlider.value = currentTime;
+                updateStartTimeValue();
+                // Update the timeline visual
+                drawTimeline();
+            }
+        });
         
         // Preview section button click handler
         previewSectionBtn.addEventListener('click', () => {
@@ -759,9 +847,82 @@
             });
         }
         
-        // Initialize sliders
-        updateStartTimeValue();
-        updateDurationValue();
+        // Draw keyboard shortcuts info
+        function drawKeyboardShortcuts() {
+            const container = document.createElement('div');
+            container.className = 'keyboard-shortcuts';
+            container.innerHTML = `
+                <h3>Keyboard Shortcuts</h3>
+                <ul>
+                    <li><strong>Space</strong> - Play/Pause video</li>
+                    <li><strong>Left/Right Arrow</strong> - Move start time -/+ 1 second</li>
+                    <li><strong>Shift + Left/Right</strong> - Move start time -/+ 5 seconds</li>
+                    <li><strong>Up/Down Arrow</strong> - Adjust duration +/- 0.5 seconds</li>
+                </ul>
+            `;
+            container.style.marginTop = '1rem';
+            container.style.padding = '1rem';
+            container.style.backgroundColor = '#333';
+            container.style.borderRadius = '5px';
+            
+            // Add to the video preview container
+            document.getElementById('video-preview-container').appendChild(container);
+        }
+        
+        // Add keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Only process if video is loaded
+            if (!player || !videoDuration) return;
+            
+            const currentStartTime = parseFloat(startTimeSlider.value);
+            const currentDuration = parseFloat(durationSlider.value);
+            
+            // Don't handle shortcuts when user is typing in an input
+            if (document.activeElement.tagName === 'INPUT') return;
+            
+            switch (e.key) {
+                case ' ': // Space bar - toggle play/pause
+                    e.preventDefault();
+                    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                        player.pauseVideo();
+                    } else {
+                        player.playVideo();
+                    }
+                    break;
+                    
+                case 'ArrowLeft': // Left arrow - move start time back
+                    e.preventDefault();
+                    const leftStep = e.shiftKey ? 5 : 1;
+                    const newStartTime = Math.max(0, currentStartTime - leftStep);
+                    startTimeSlider.value = newStartTime;
+                    updateStartTimeValue();
+                    player.seekTo(newStartTime, true);
+                    break;
+                    
+                case 'ArrowRight': // Right arrow - move start time forward
+                    e.preventDefault();
+                    const rightStep = e.shiftKey ? 5 : 1;
+                    const newEndTime = Math.min(videoDuration - 1, currentStartTime + rightStep);
+                    startTimeSlider.value = newEndTime;
+                    updateStartTimeValue();
+                    player.seekTo(newEndTime, true);
+                    break;
+                    
+                case 'ArrowUp': // Up arrow - increase duration
+                    e.preventDefault();
+                    const newDurationUp = Math.min(10, currentDuration + 0.5);
+                    durationSlider.value = newDurationUp;
+                    updateDurationValue();
+                    break;
+                    
+                case 'ArrowDown': // Down arrow - decrease duration
+                    e.preventDefault();
+                    const newDurationDown = Math.max(1, currentDuration - 0.5);
+                    durationSlider.value = newDurationDown;
+                    updateDurationValue();
+                    break;
+            }
+        });
     </script>
 </body>
 </html>
