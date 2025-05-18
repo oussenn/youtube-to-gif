@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube to GIF Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gifshot/0.4.5/gifshot.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        :root {
+            --primary: #ff4242;
+            --primary-dark: #d83535;
+            --secondary: #2d2d2d;
+            --light: #f5f5f5;
+            --dark: #1a1a1a;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background-color: var(--dark);
+            color: var(--light);
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            color: var(--primary);
+        }
+        
+        p {
+            font-size: 1.1rem;
+            color: #bbbbbb;
+            margin-bottom: 1rem;
+        }
+        
+        .card {
+            background-color: var(--secondary);
+            border-radius: 10px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 0.75rem;
+            border-radius: 5px;
+            border: 1px solid #444;
+            background-color: #333;
+            color: white;
+            font-size: 1rem;
+        }
+        
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        button:disabled {
+            background-color: #666;
+            cursor: not-allowed;
+        }
+        
+        .preview-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 2rem;
+        }
+        
+        #video-preview-container, #gif-preview-container {
+            width: 100%;
+            max-width: 640px;
+            position: relative;
+            margin-bottom: 1.5rem;
+        }
+        
+        #video-preview-container {
+            display: none;
+        }
+        
+        #video-preview {
+            width: 100%;
+            border-radius: 5px;
+        }
+        
+        #gif-preview {
+            width: 100%;
+            border-radius: 5px;
+            margin-top: 1rem;
+        }
+        
+        #loading {
+            display: none;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: var(--primary);
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #download-btn {
+            display: none;
+            margin-top: 1rem;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .time-display {
+            background-color: rgba(0, 0, 0, 0.6);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+        }
+        
+        #timeline {
+            width: 100%;
+            height: 50px;
+            position: relative;
+            background-color: #444;
+            border-radius: 5px;
+            margin-top: 1rem;
+            overflow: hidden;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .slider-wrapper {
+            flex-grow: 1;
+        }
+        
+        .slider-value {
+            min-width: 50px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #444;
+            outline: none;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--primary);
+            cursor: pointer;
+        }
+        
+        .error-message {
+            color: #ff6b6b;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .info-box {
+            background-color: rgba(66, 135, 245, 0.1);
+            border-left: 4px solid #4287f5;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border-radius: 0 5px 5px 0;
+        }
+        
+        .quality-options {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-top: 0.5rem;
+        }
+        
+        .quality-option {
+            padding: 0.5rem 1rem;
+            background-color: #444;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .quality-option.active {
+            background-color: var(--primary);
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 3rem;
+            color: #888;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            .controls {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>YouTube to GIF Converter</h1>
+            <p>Create animated GIFs from your favorite YouTube videos in seconds!</p>
+        </header>
+        
+        <div class="card">
+            <div class="info-box">
+                <p>Select a YouTube video and choose a 1-10 second clip to convert to a GIF. Adjust the start time, duration, and quality to create the perfect animation.</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="youtube-url">YouTube Video URL</label>
+                <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+                <div id="url-error" class="error-message"></div>
+            </div>
+            
+            <button id="load-video-btn">Load Video</button>
+        </div>
+        
+        <div id="video-preview-container" class="card">
+            <div id="player-container">
+                <div id="player"></div>
+                <div class="time-display" id="current-time">0:00</div>
+            </div>
+            
+            <div id="timeline"></div>
+            
+            <div class="slider-container">
+                <label>Start Time:</label>
+                <div class="slider-wrapper">
+                    <input type="range" id="start-time" min="0" max="100" value="0" step="0.1">
+                </div>
+                <div class="slider-value" id="start-time-value">0:00</div>
+            </div>
+            
+            <div class="slider-container">
+                <label>Duration:</label>
+                <div class="slider-wrapper">
+                    <input type="range" id="duration" min="1" max="10" value="5" step="0.1">
+                </div>
+                <div class="slider-value" id="duration-value">5.0s</div>
+            </div>
+            
+            <div class="form-group">
+                <label>GIF Quality:</label>
+                <div class="quality-options">
+                    <div class="quality-option" data-quality="low">Low (faster)</div>
+                    <div class="quality-option active" data-quality="medium">Medium</div>
+                    <div class="quality-option" data-quality="high">High (slower)</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="preview-section-btn">Preview Section</button>
+                <button id="create-gif-btn">Create GIF</button>
+            </div>
+        </div>
+        
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Creating your GIF... This may take a few moments.</p>
+        </div>
+        
+        <div id="gif-preview-container" class="card" style="display: none;">
+            <h2>Your GIF Preview</h2>
+            <div class="preview-container">
+                <img id="gif-preview" alt="GIF Preview">
+                <button id="download-btn">Download GIF</button>
+            </div>
+        </div>
+        
+        <footer>
+            <p>YouTube to GIF Converter &copy; 2025 | Created with ❤️</p>
+        </footer>
+    </div>
+    
+    <script>
+        // YouTube API code
+        let tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        let firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        
+        let player;
+        let videoId = null;
+        let videoDuration = 0;
+        let timelineCanvas;
+        let timelineCtx;
+        let quality = 'medium';
+        
+        // Quality settings
+        const qualitySettings = {
+            low: { interval: 0.3, numFrames: 10 },
+            medium: { interval: 0.2, numFrames: 15 },
+            high: { interval: 0.1, numFrames: 20 }
+        };
+        
+        // DOM elements
+        const youtubeUrlInput = document.getElementById('youtube-url');
+        const loadVideoBtn = document.getElementById('load-video-btn');
+        const videoPreviewContainer = document.getElementById('video-preview-container');
+        const startTimeSlider = document.getElementById('start-time');
+        const durationSlider = document.getElementById('duration');
+        const startTimeValue = document.getElementById('start-time-value');
+        const durationValue = document.getElementById('duration-value');
+        const previewSectionBtn = document.getElementById('preview-section-btn');
+        const createGifBtn = document.getElementById('create-gif-btn');
+        const loading = document.getElementById('loading');
+        const gifPreviewContainer = document.getElementById('gif-preview-container');
+        const gifPreview = document.getElementById('gif-preview');
+        const downloadBtn = document.getElementById('download-btn');
+        const currentTime = document.getElementById('current-time');
+        const urlError = document.getElementById('url-error');
+        
+        // Initialize quality options
+        document.querySelectorAll('.quality-option').forEach(option => {
+            option.addEventListener('click', () => {
+                document.querySelectorAll('.quality-option').forEach(o => o.classList.remove('active'));
+                option.classList.add('active');
+                quality = option.dataset.quality;
+            });
+        });
+        
+        // YouTube player initialization
+        function onYouTubeIframeAPIReady() {
+            // YouTube API is ready
+        }
+        
+        function loadYouTubeVideo(id) {
+            if (player) {
+                player.destroy();
+            }
+            
+            player = new YT.Player('player', {
+                height: '360',
+                width: '640',
+                videoId: id,
+                playerVars: {
+                    'playsinline': 1,
+                    'controls': 1,
+                    'modestbranding': 1
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+        
+        function onPlayerReady(event) {
+            videoDuration = player.getDuration();
+            startTimeSlider.max = videoDuration - 1;
+            updateStartTimeValue();
+            
+            // Initialize timeline canvas
+            const timeline = document.getElementById('timeline');
+            timeline.innerHTML = '<canvas id="timeline-canvas" width="' + timeline.offsetWidth + '" height="50"></canvas>';
+            timelineCanvas = document.getElementById('timeline-canvas');
+            timelineCtx = timelineCanvas.getContext('2d');
+            
+            // Draw initial timeline
+            drawTimeline();
+            
+            // Set up timeline click interaction
+            timelineCanvas.addEventListener('click', (e) => {
+                const rect = timelineCanvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const clickTime = (x / timelineCanvas.width) * videoDuration;
+                player.seekTo(clickTime, true);
+            });
+            
+            // Start updating current time
+            setInterval(updateCurrentTime, 100);
+        }
+        
+        function onPlayerStateChange(event) {
+            // Update current time when video is playing
+        }
+        
+        function updateCurrentTime() {
+            if (player && player.getCurrentTime) {
+                const time = player.getCurrentTime();
+                currentTime.textContent = formatTime(time);
+                drawTimeline();
+            }
+        }
+        
+        function drawTimeline() {
+            if (!timelineCtx || !player || !player.getCurrentTime) return;
+            
+            const width = timelineCanvas.width;
+            const height = timelineCanvas.height;
+            const currentTime = player.getCurrentTime();
+            const startTime = parseFloat(startTimeSlider.value);
+            const duration = parseFloat(durationSlider.value);
+            
+            // Clear canvas
+            timelineCtx.clearRect(0, 0, width, height);
+            
+            // Draw background
+            timelineCtx.fillStyle = '#444';
+            timelineCtx.fillRect(0, 0, width, height);
+            
+            // Draw selected region
+            const startX = (startTime / videoDuration) * width;
+            const regionWidth = (duration / videoDuration) * width;
+            timelineCtx.fillStyle = 'rgba(255, 66, 66, 0.5)';
+            timelineCtx.fillRect(startX, 0, regionWidth, height);
+            
+            // Draw current time marker
+            const currentX = (currentTime / videoDuration) * width;
+            timelineCtx.fillStyle = '#fff';
+            timelineCtx.fillRect(currentX - 1, 0, 2, height);
+        }
+        
+        // Format time to MM:SS
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            seconds = Math.floor(seconds % 60);
+            return minutes + ':' + (seconds < 10 ? '0' : '') + seconds;
+        }
+        
+        // Update display values
+        function updateStartTimeValue() {
+            const time = startTimeSlider.value;
+            startTimeValue.textContent = formatTime(time);
+            drawTimeline();
+        }
+        
+        function updateDurationValue() {
+            const time = durationSlider.value;
+            durationValue.textContent = time + 's';
+            drawTimeline();
+        }
+        
+        // Extract YouTube video ID from URL
+        function getYouTubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+        
+        // Load video button click handler
+        loadVideoBtn.addEventListener('click', () => {
+            const url = youtubeUrlInput.value.trim();
+            videoId = getYouTubeId(url);
+            
+            if (!videoId) {
+                urlError.textContent = 'Please enter a valid YouTube URL';
+                return;
+            }
+            
+            urlError.textContent = '';
+            videoPreviewContainer.style.display = 'block';
+            gifPreviewContainer.style.display = 'none';
+            loadYouTubeVideo(videoId);
+        });
+        
+        // Update sliders
+        startTimeSlider.addEventListener('input', updateStartTimeValue);
+        durationSlider.addEventListener('input', updateDurationValue);
+        
+        // Preview section button click handler
+        previewSectionBtn.addEventListener('click', () => {
+            const startTime = parseFloat(startTimeSlider.value);
+            player.seekTo(startTime, true);
+            player.playVideo();
+            
+            // Stop video after duration
+            setTimeout(() => {
+                player.pauseVideo();
+            }, parseFloat(durationSlider.value) * 1000);
+        });
+        
+        // Create GIF button click handler
+        createGifBtn.addEventListener('click', async () => {
+            const startTime = parseFloat(startTimeSlider.value);
+            const duration = parseFloat(durationSlider.value);
+            
+            if (!videoId) return;
+            
+            // Show loading
+            loading.style.display = 'block';
+            
+            try {
+                // Create GIF
+                await createGif(videoId, startTime, duration);
+            } catch (error) {
+                console.error('Error creating GIF:', error);
+                alert('Error creating GIF. Please try again.');
+            } finally {
+                loading.style.display = 'none';
+            }
+        });
+        
+        // Create GIF from YouTube video
+        async function createGif(videoId, startTime, duration) {
+            // Calculate frames to capture
+            const { interval, numFrames } = qualitySettings[quality];
+            const framesToCapture = Math.min(Math.ceil(duration / interval), numFrames);
+            
+            // Get video frames
+            const frames = await captureVideoFrames(videoId, startTime, duration, framesToCapture);
+            
+            // Create GIF using gifshot
+            return new Promise((resolve, reject) => {
+                gifshot.createGIF({
+                    images: frames,
+                    gifWidth: 480,
+                    gifHeight: 270,
+                    numFrames: framesToCapture,
+                    frameDuration: duration / framesToCapture * 10,
+                    progressCallback: (progress) => {
+                        console.log('GIF creation progress:', progress);
+                    }
+                }, (result) => {
+                    if (!result.error) {
+                        // Display GIF
+                        gifPreview.src = result.image;
+                        gifPreviewContainer.style.display = 'block';
+                        downloadBtn.style.display = 'block';
+                        
+                        // Set up download button
+                        downloadBtn.onclick = () => {
+                            const link = document.createElement('a');
+                            link.href = result.image;
+                            link.download = 'youtube-gif-' + videoId + '.gif';
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        };
+                        
+                        resolve();
+                    } else {
+                        reject(result.error);
+                    }
+                });
+            });
+        }
+        
+        // Capture video frames
+        async function captureVideoFrames(videoId, startTime, duration, numFrames) {
+            return new Promise((resolve) => {
+                const frames = [];
+                const interval = duration / numFrames;
+                const video = document.createElement('video');
+                video.crossOrigin = 'anonymous';
+                
+                // Create canvas for capturing frames
+                const canvas = document.createElement('canvas');
+                canvas.width = 480;
+                canvas.height = 270;
+                const ctx = canvas.getContext('2d');
+                
+                // Set up video
+                video.src = `https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&showinfo=0&rel=0&autoplay=1&start=${Math.floor(startTime)}`;
+                video.style.display = 'none';
+                document.body.appendChild(video);
+                
+                let frameCount = 0;
+                
+                // Capture frames at intervals
+                const captureFrame = () => {
+                    if (frameCount >= numFrames) {
+                        document.body.removeChild(video);
+                        resolve(frames);
+                        return;
+                    }
+                    
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    frames.push(canvas.toDataURL('image/jpeg', 0.8));
+                    
+                    frameCount++;
+                    setTimeout(captureFrame, interval * 1000);
+                };
+                
+                video.oncanplay = () => {
+                    video.play();
+                    captureFrame();
+                };
+                
+                // Alternative method using Image
+                if (!video.canPlayType) {
+                    // For browsers with CORS issues, use images instead
+                    const generateFrames = () => {
+                        for (let i = 0; i < numFrames; i++) {
+                            const time = startTime + (i * interval);
+                            const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/0.jpg`;
+                            frames.push(thumbnailUrl);
+                        }
+                        resolve(frames);
+                    };
+                    
+                    generateFrames();
+                    document.body.removeChild(video);
+                }
+            });
+        }
+        
+        // Initialize sliders
+        updateStartTimeValue();
+        updateDurationValue();
+    </script>
+</body>
+</html>
